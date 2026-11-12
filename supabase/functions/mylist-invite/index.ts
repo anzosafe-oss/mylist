@@ -11,16 +11,18 @@ Deno.serve(async req=>{
  const admin=createClient(url,Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,{auth:{persistSession:false}});
  const {data:{user},error}=await admin.auth.getUser(token);
  if(error||!user)return answer(401,{error:'Sesiune expirată'});
- const {data:account}=await admin.from('mylist_accounts').select('is_admin').eq('user_id',user.id).not('accepted_at','is',null).maybeSingle();
+ const database=createClient(url,Deno.env.get('SUPABASE_ANON_KEY')!,{global:{headers:{Authorization:`Bearer ${token}`}},auth:{persistSession:false}});
+ const {data:account,error:accountError}=await database.from('mylist_accounts').select('is_admin').eq('user_id',user.id).not('accepted_at','is',null).maybeSingle();
+ if(accountError){console.error('mylist_admin_lookup',accountError.code);return answer(500,{error:'Verificarea rolului de administrator a eșuat. Încearcă din nou.'})}
  if(!account?.is_admin)return answer(403,{error:'Doar administratorul poate trimite invitații'});
  try{
  const body=await req.json();const email=String(body.email||'').trim().toLowerCase();
  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||email.length>254)return answer(400,{error:'Adresă de e-mail invalidă'});
- const {data:old}=await admin.from('mylist_accounts').select('email,accepted_at,invited_at').eq('email',email).maybeSingle();
+ const {data:old}=await database.from('mylist_accounts').select('email,accepted_at,invited_at').eq('email',email).maybeSingle();
  if(old?.accepted_at)return answer(409,{error:'Persoana are deja acces la MyList'});
  if(old&&Date.now()-Date.parse(old.invited_at)<60000)return answer(429,{error:'Așteaptă un minut înainte să retrimiți invitația'});
- const {error:insertError}=await admin.from('mylist_accounts').upsert({email,invited_at:new Date().toISOString()},{onConflict:'email'});
- if(insertError)return answer(500,{error:'Invitația nu a putut fi înregistrată'});
+ const {error:insertError}=await database.from('mylist_accounts').insert({email});
+ if(insertError&&insertError.code!=='23505')return answer(500,{error:'Invitația nu a putut fi înregistrată'});
  const redirectTo=origin==='https://anzosafe-oss.github.io'?'https://anzosafe-oss.github.io/mylist/':'https://mylist-anzo-preview.zota-andrei.chatgpt.site/';
  let sent=await admin.auth.admin.inviteUserByEmail(email,{redirectTo});
  if(sent.error&&(sent.error.code==='email_exists'||sent.error.code==='user_already_exists')){
