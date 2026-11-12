@@ -1,0 +1,13 @@
+{
+  "dependencies": {
+    "@supabase/supabase-js": "2.119.0",
+    "esbuild": "0.25.12"
+  },
+  "name": "mylist",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "node build.cjs",
+    "check": "node --check dist/app.js"
+  }
+}

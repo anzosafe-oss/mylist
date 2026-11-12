@@ -1,0 +1,1 @@
+require('esbuild').buildSync({entryPoints:['node_modules/@supabase/supabase-js/dist/index.mjs'],bundle:true,format:'iife',globalName:'supabase',outfile:'dist/vendor/supabase.js',minify:true,platform:'browser'});
