@@ -1,6 +1,6 @@
-# MyList v1.0.0
+# MyList v2.0.0
 
-Shopping lists with Supabase email-link authentication, private lists, explicit per-list sharing, automatic completion history and restore.
+Shopping lists with Supabase password/invitation authentication, private lists, explicit per-list sharing, automatic completion history and restore.
 
 ## Hosting
 
@@ -31,9 +31,20 @@ Legacy browser lists are offered for explicit import in Settings; the source bro
 
 ## Build
 
-npm ci --ignore-scripts
-npm run build
+No build step: `dist/` is the authoritative static application.
+Do not run the legacy `build.cjs`, which predates the current frontend.
+`npm run check` validates application syntax.
 
 ## Verification
 
 Server transaction tests covered private/shared visibility, unrelated accounts, completion, restoration, quantity preservation and access revocation. Test accounts and lists were rolled back.
+
+
+## Families and AdminMyList (v2.0.0)
+Apply `supabase/families.sql` after the existing schema, profile and account-administration upgrades. It preserves the initial four-member household and existing list sharing. All subsequent app-wide invitations create a separate family administrator. Each household has exactly four seats, including its administrator; pending invitations reserve seats. Failed sends release new reservations. Global Auth identities and other applications are not deleted.
+
+The main Settings roster/invitations are restricted to the signed-in household using RLS. Only family administrators send family invitations. AdminMyList at `/admin/` is a separate installable frontend using the same existing MyList session; its authenticated RPC verifies the global admin role in the database. It reports accounts, family administrators, pending/history and seat quotas, and never retrieves shopping lists. Family administrators cannot access it. The AdminMyList manifest has a separate identity, scope and A-marked icon.
+
+The server function verifies the Auth bearer token, then calls a service-role-only reservation RPC, which serializes email/household reservations. Neither client metadata nor client-supplied family IDs grant roles. The legacy internal list function is no longer executable by browser roles. Every list remains private until explicitly shared within its household.
+
+Run `tests/families.sql` against a transaction-capable SQL console: all fixtures roll back and no email is sent. The older `tests/account-administration.sql` documents the pre-family v1.2.0 schema and is superseded by the v2.0.0 suite.

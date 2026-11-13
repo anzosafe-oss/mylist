@@ -92,3 +92,5 @@ grant execute on function public.mylist_action(text,jsonb) to authenticated;
 -- Bootstrap an administrator privately after verifying the account.
 -- Do not commit personal email addresses or user IDs into this file.
 commit;
+
+-- Follow with member-profiles.sql, account-administration.sql and families.sql for the v2 family model.

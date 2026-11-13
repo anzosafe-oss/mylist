@@ -4,10 +4,10 @@
     "esbuild": "0.25.12"
   },
   "name": "mylist",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "scripts": {
     "build": "node build.cjs",
-    "check": "node --check dist/app.js"
+    "check": "node --check dist/app.js && node --check dist/admin/admin.js"
   }
 }
