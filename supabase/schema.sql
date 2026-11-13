@@ -38,6 +38,19 @@ begin
   if not mylist_private.is_admin() then raise exception 'Doar administratorul';end if;
   delete from public.mylist_accounts where email=lower(p->>'email') and user_id is null and not is_admin;return '{}';
  end if;
+ if op='remove_account' then
+  if not mylist_private.is_admin() then raise exception 'Doar administratorul poate șterge conturi din MyList';end if;
+  select * into rec from public.mylist_accounts where email=lower(trim(p->>'email')) for update;
+  if not found then raise exception 'Contul nu mai este disponibil';end if;
+  if rec.is_admin or rec.user_id=uid then raise exception 'Contul de administrator nu poate fi șters';end if;
+  target:=rec.user_id;
+  if target is not null then
+   delete from public.mylist_members where user_id=target;
+   delete from public.mylist_profiles where user_id=target;
+  end if;
+  delete from public.mylist_accounts where email=rec.email;
+  return jsonb_build_object('removed',true);
+ end if;
  lid:=(p->>'list_id')::uuid;
  select owner_id into own from public.mylist_lists where id=lid and deleted_at is null for update;
  if own is null or not mylist_private.access_list(lid) then raise exception 'Lista nu este disponibilă';end if;
@@ -46,7 +59,9 @@ begin
  elsif op='delete' then update public.mylist_lists set deleted_at=now() where id=lid;
  elsif op='share' then
   target:=(p->>'user_id')::uuid;
-  if target=own or not exists(select 1 from public.mylist_accounts where user_id=target and accepted_at is not null) then raise exception 'Cont indisponibil';end if;
+  if target=own then raise exception 'Cont indisponibil';end if;
+  perform 1 from public.mylist_accounts where user_id=target and accepted_at is not null for key share;
+  if not found then raise exception 'Cont indisponibil';end if;
   insert into public.mylist_members values(lid,target) on conflict do nothing;
  elsif op='revoke' then delete from public.mylist_members where list_id=lid and user_id=(p->>'user_id')::uuid;
  elsif op='restore' then update public.mylist_items set done=false where list_id=lid;update public.mylist_lists set completed_at=null where id=lid;
