@@ -48,3 +48,5 @@ The main Settings roster/invitations are restricted to the signed-in household u
 The server function verifies the Auth bearer token, then calls a service-role-only reservation RPC, which serializes email/household reservations. Neither client metadata nor client-supplied family IDs grant roles. The legacy internal list function is no longer executable by browser roles. Every list remains private until explicitly shared within its household.
 
 Run `tests/families.sql` against a transaction-capable SQL console: all fixtures roll back and no email is sent. The older `tests/account-administration.sql` documents the pre-family v1.2.0 schema and is superseded by the v2.0.0 suite.
+
+GitHub Pages currently also runs its built-in branch-root publisher. Root `index.html` and `admin/` mirror the authoritative `dist/` entrypoints so either publisher serves the same release. Update both until hosting is switched exclusively to Actions.
