@@ -40,7 +40,7 @@ function render(){if(passwordMode)return;
  const l=current();$('listTitle').textContent=l?.name||'Nicio listă activă';$('listSubtitle').textContent='';$('listVisibility').innerHTML=l?listVisibilityIcon(l):'';
  $('syncStatus').style.display=l?'':'none';document.querySelector('.panel-head .list-menu').style.display=l?'':'none';document.querySelector('.add').style.display=l?'flex':'none';$('filters').innerHTML='';
  const rows=l?listItems(l.id):[];const ordered=[...rows.filter(i=>!i.done),...(hideDone?[]:rows.filter(i=>i.done))];
- $('items').innerHTML=ordered.map(i=>`<div class="item ${i.done?'done':''}" data-id="${i.id}">${!i.done?`<button class="drag-handle" aria-label="Mută ${esc(i.name)}" onpointerdown="startReorder(event,'${i.id}')" onkeydown="reorderKey(event,'${i.id}')">⠿</button>`:''}<button class="check ${i.done?'done':''}" aria-label="${i.done?'Debifează':'Cumpărat'} ${esc(i.name)}" onclick="toggleItem('${i.id}')">${i.done?'✓':''}</button><div class="item-info" role="button" tabindex="0" onclick="editItem('${i.id}')" onkeydown="if(event.key==='Enter')editItem('${i.id}')"><b>${esc(i.name)}</b>${i.important?'<span class="priority">Important</span>':''}</div><button class="qty" aria-label="Modifică cantitatea pentru ${esc(i.name)}" onclick="editItem('${i.id}',true)">${formatQty(i)}</button></div>`).join('')||'<div class="empty">Niciun produs aici, deocamdată.</div>';
+ $('items').innerHTML=ordered.map(i=>`<div class="item ${i.done?'done':''}" data-id="${i.id}" ${i.done?`onpointerdown="startPurchasedSwipe(event,'${i.id}')"`:''}>${i.done?`<button type="button" class="item-delete" aria-label="Șterge ${esc(i.name)} din listă" title="Șterge produsul cumpărat" onclick="removeBoughtItem('${i.id}')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6M14 10v6"/></svg></button>`:`<button class="drag-handle" aria-label="Mută ${esc(i.name)}" onpointerdown="startReorder(event,'${i.id}')" onkeydown="reorderKey(event,'${i.id}')">⠿</button>`}<button class="check ${i.done?'done':''}" aria-label="${i.done?'Debifează':'Cumpărat'} ${esc(i.name)}" onclick="toggleItem('${i.id}')">${i.done?'✓':''}</button><div class="item-info" role="button" tabindex="0" onclick="editItem('${i.id}')" onkeydown="if(event.key==='Enter')editItem('${i.id}')"><b>${esc(i.name)}</b>${i.important?'<span class="priority">Important</span>':''}</div><button class="qty" aria-label="Modifică cantitatea pentru ${esc(i.name)}" onclick="editItem('${i.id}',true)">${formatQty(i)}</button></div>`).join('')||'<div class="empty">Niciun produs aici, deocamdată.</div>';
  const n=rows.filter(i=>i.done).length;$('progressText').innerHTML=rows.length?`<span class="live-progress"><i style="width:${n/rows.length*100}%"></i></span><span>${n} din ${rows.length} cumpărate</span>`:'';status(synced?'Sincronizat':'Se conectează…');startPresence();
 }
 function formatQty(i){return esc(Number(i.quantity).toLocaleString('ro-RO')+' '+i.unit)}
@@ -54,6 +54,48 @@ async function restoreList(id){try{await action('restore',{list_id:id});selected
 function deleteList(id){openModal('<h2>Șterge lista?</h2><p>Lista nu va mai apărea nici pentru persoanele cu care este partajată.</p>',async e=>{e.preventDefault();try{await action('delete',{list_id:id});closeModal();toast('Lista a fost ștearsă')}catch(e){handleError(e)}})}
 function editItem(id,qtyOnly=false){const i=items.find(x=>x.id===id);if(!i)return;const units=['buc.','st.','kg','g','l','ml','leg.','sac','set'];if(!units.includes(i.unit))units.push(i.unit);openModal(`<h2>${qtyOnly?'Cantitate':'Detaliile produsului'}</h2>${qtyOnly?`<p>${esc(i.name)}</p>`:`<label for="editName">Produs</label><input id="editName" required maxlength="160" value="${esc(i.name)}">`}<label for="amount">Cantitate</label><input id="amount" type="number" required min="0.01" max="1000000" step="any" value="${i.quantity}" inputmode="decimal"><label for="unit">Unitate</label><select id="unit">${units.map(u=>`<option ${u===i.unit?'selected':''}>${esc(u)}</option>`).join('')}</select>${qtyOnly?'':`<button type="button" id="importantToggle" class="important-toggle ${i.important?'selected':''}" aria-pressed="${i.important}" onclick="this.setAttribute('aria-pressed',this.getAttribute('aria-pressed')!=='true');this.classList.toggle('selected')">! Important</button><button type="button" class="menu-action danger" onclick="removeItem('${id}')">Șterge produsul</button>`}`,async e=>{e.preventDefault();const patch={list_id:i.list_id,id,quantity:Number($('amount').value),unit:$('unit').value};if(!qtyOnly){patch.name=cap($('editName').value.trim());patch.important=$('importantToggle').getAttribute('aria-pressed')==='true'}try{await action('edit',patch);closeModal()}catch(e){handleError(e)}})}
 async function removeItem(id){const i=items.find(x=>x.id===id);try{await action('remove',{list_id:i.list_id,id});closeModal()}catch(e){handleError(e)}}
+
+// Purchased rows can be removed independently; pending rows keep their reorder handle.
+async function removeBoughtItem(id){
+ const item=items.find(i=>i.id===id);if(!item?.done||busy)return;
+ const row=document.querySelector(`#items .item[data-id="${id}"]`);
+ row?.classList.add('item-removing');
+ try{await action('remove',{list_id:item.list_id,id});toast('Produs șters din listă',true)}
+ catch(error){row?.classList.remove('item-removing');handleError(error)}
+}
+function startPurchasedSwipe(event,id){
+ if(event.button!==0||busy||!items.some(i=>i.id===id&&i.done)||event.target.closest('.item-delete'))return;
+ const row=event.currentTarget,pointer=event.pointerId,startX=event.clientX,startY=event.clientY;
+ const threshold=Math.min(112,Math.max(72,row.getBoundingClientRect().width*.28));
+ let horizontal=false,delta=0,suppressTimer;
+ const suppressClick=e=>{e.preventDefault();e.stopImmediatePropagation();};
+ const cleanup=()=>{
+  row.removeEventListener('pointermove',move);row.removeEventListener('pointerup',finish);row.removeEventListener('pointercancel',finish);row.removeEventListener('lostpointercapture',finish);
+  if(row.hasPointerCapture(pointer))row.releasePointerCapture(pointer);
+  row.classList.remove('item-swiping','swipe-ready');row.style.removeProperty('--swipe-x');
+ };
+ const move=e=>{
+  if(e.pointerId!==pointer)return;
+  const dx=e.clientX-startX,dy=e.clientY-startY;
+  if(!horizontal){
+   if(Math.max(Math.abs(dx),Math.abs(dy))<12)return;
+   if(Math.abs(dy)>=Math.abs(dx)){cleanup();return;}
+   horizontal=true;row.setPointerCapture(pointer);row.addEventListener('click',suppressClick,true);
+  }
+  if(e.cancelable)e.preventDefault();
+  delta=dx;row.classList.add('item-swiping');row.classList.toggle('swipe-ready',Math.abs(dx)>=threshold);
+  row.style.setProperty('--swipe-x',Math.max(-160,Math.min(160,dx))+'px');
+ };
+ const finish=e=>{
+  if(e.pointerId!==pointer)return;
+  const remove=e.type==='pointerup'&&horizontal&&Math.abs(delta)>=threshold&&row.isConnected;
+  cleanup();
+  if(horizontal){clearTimeout(suppressTimer);suppressTimer=setTimeout(()=>row.removeEventListener('click',suppressClick,true),400);}
+  if(remove)removeBoughtItem(id);
+ };
+ row.addEventListener('pointermove',move);row.addEventListener('pointerup',finish);row.addEventListener('pointercancel',finish);row.addEventListener('lostpointercapture',finish);
+}
+
 function renderHistory(){const archived=lists.filter(l=>l.completed_at).sort((a,b)=>new Date(b.completed_at)-new Date(a.completed_at));$('listTitle').textContent='Istoric';$('listVisibility').innerHTML='';$('listSubtitle').textContent='Liste completate integral, gata de refolosit.';$('syncStatus').style.display='none';document.querySelector('.panel-head .list-menu').style.display='none';$('filters').innerHTML='';$('progressText').textContent='';$('items').innerHTML=archived.map(l=>`<article class="history-list"><div class="history-list-head"><span class="store-icon">${listIcon(l)}</span><div class="history-list-name"><h3>${esc(l.name)}</h3><small class="card-meta">${listVisibilityIcon(l)}<span>${listItems(l.id).length} produse · ${new Date(l.completed_at).toLocaleDateString('ro-RO')}</span></small></div><button class="outline" onclick="restoreList('${l.id}')">Restaurează</button></div><details><summary>Vezi produsele</summary><ul>${listItems(l.id).map(i=>`<li><span>${esc(i.name)}</span><span>${formatQty(i)}</span></li>`).join('')}</ul></details></article>`).join('')||'<div class="empty">Listele ajung aici automat după bifarea tuturor produselor.</div>'}
 function shareList(id){const l=lists.find(x=>x.id===id);const others=accounts.filter(a=>a.user_id&&a.user_id!==user.id&&a.accepted_at);openModal(`<h2>Distribuie lista</h2><p>${esc(l.name)} · Alegi cine poate vedea și modifica această listă.</p>${others.length?others.map(a=>`<label class="setting-row"><span class="account-email">${esc(a.email)}</span><input type="checkbox" ${members.some(m=>m.list_id===id&&m.user_id===a.user_id)?'checked':''} onchange="changeShare('${id}','${a.user_id}',this)"></label>`).join(''):'<p>Nu există încă alți membri. Invită-i din Setări → Familia mea.</p>'}<p>Dacă nu selectezi pe nimeni, lista rămâne personală.</p>`)}
 async function changeShare(id,uid,input){input.disabled=true;try{await action(input.checked?'share':'revoke',{list_id:id,user_id:uid});toast(input.checked?'Lista a fost partajată':'Accesul a fost retras')}catch(e){input.checked=!input.checked;handleError(e)}finally{input.disabled=false}}
@@ -75,7 +117,7 @@ function confirmRemoveAccount(uid){
  const button=form.querySelector('.actions .primary');button.textContent='Șterge din MyList';button.classList.add('danger-confirm');button.disabled=true;
 }
 
-function renderSettings(){$('settingsPanel').innerHTML=`<h2>Setări</h2><p class="settings-caption">MyList, așa cum vă place.</p><div class="settings-section"><h3>Cont</h3><p class="account-email">${esc(user.email)} · ${me()?.is_admin?'Administrator MyList':families.some(f=>f.admin_id===user.id)?'Administrator de familie':'Membru'}</p><div class="data-actions"><button class="outline" onclick="showPasswordSetup()">Setează parola</button><button class="outline" onclick="logout()">Deconectare</button></div></div>${profileSettings()}<div class="settings-section"><h3>Afișare</h3><label class="setting-row">Temă<select aria-label="Temă" onchange="setTheme(this.value)">${[['light','Luminos'],['dark','Întunecat'],['system','Sistem']].map(([v,n])=>`<option value="${v}" ${themePreference===v?'selected':''}>${n}</option>`).join('')}</select></label><label class="setting-row"><span>Arată produsele cumpărate</span><input type="checkbox" ${!hideDone?'checked':''} onchange="hideDone=!this.checked"></label></div>${familySettings()}<div class="settings-section"><h3>Date și salvare</h3><p>Listele sunt salvate în contul tău. Cele partajate se actualizează automat, la câteva secunde.</p><div class="data-actions"><button class="outline" onclick="exportLists()">Exportă listele</button><button class="outline" onclick="$('importLists').click()">Importă liste</button></div><input id="importLists" type="file" accept="application/json" hidden onchange="importLists(this)"><div id="localMigration"></div></div><p class="settings-caption">MyList v2.0.4</p>`;let old;try{old=JSON.parse(localStorage.getItem('mylist-demo-v1'))}catch{}if(Array.isArray(old)&&old.length&&!localStorage.getItem('mylist-imported-'+user.id))$('localMigration').innerHTML='<p>Există liste din versiunea anterioară pe acest dispozitiv.</p><button class="outline" onclick="importLocal()">Importă listele de pe dispozitiv</button>'}
+function renderSettings(){$('settingsPanel').innerHTML=`<h2>Setări</h2><p class="settings-caption">MyList, așa cum vă place.</p><div class="settings-section"><h3>Cont</h3><p class="account-email">${esc(user.email)} · ${me()?.is_admin?'Administrator MyList':families.some(f=>f.admin_id===user.id)?'Administrator de familie':'Membru'}</p><div class="data-actions"><button class="outline" onclick="showPasswordSetup()">Setează parola</button><button class="outline" onclick="logout()">Deconectare</button></div></div>${profileSettings()}<div class="settings-section"><h3>Afișare</h3><label class="setting-row">Temă<select aria-label="Temă" onchange="setTheme(this.value)">${[['light','Luminos'],['dark','Întunecat'],['system','Sistem']].map(([v,n])=>`<option value="${v}" ${themePreference===v?'selected':''}>${n}</option>`).join('')}</select></label><label class="setting-row"><span>Arată produsele cumpărate</span><input type="checkbox" ${!hideDone?'checked':''} onchange="hideDone=!this.checked"></label></div>${familySettings()}<div class="settings-section"><h3>Date și salvare</h3><p>Listele sunt salvate în contul tău. Cele partajate se actualizează automat, la câteva secunde.</p><div class="data-actions"><button class="outline" onclick="exportLists()">Exportă listele</button><button class="outline" onclick="$('importLists').click()">Importă liste</button></div><input id="importLists" type="file" accept="application/json" hidden onchange="importLists(this)"><div id="localMigration"></div></div><p class="settings-caption">MyList v2.1.0</p>`;let old;try{old=JSON.parse(localStorage.getItem('mylist-demo-v1'))}catch{}if(Array.isArray(old)&&old.length&&!localStorage.getItem('mylist-imported-'+user.id))$('localMigration').innerHTML='<p>Există liste din versiunea anterioară pe acest dispozitiv.</p><button class="outline" onclick="importLocal()">Importă listele de pe dispozitiv</button>'}
 async function invite(e){e.preventDefault();const b=e.target.querySelector('button');b.disabled=true;try{const {data,error}=await sb.functions.invoke('mylist-invite',{body:{email:$('inviteEmail').value.trim()}});if(error){let msg='Invitația nu a fost trimisă';try{msg=(await error.context.json()).error||msg}catch{}throw Error(msg)}toast('Invitație trimisă pe e-mail',true);await load(true)}catch(e){handleError(e)}finally{b.disabled=false}}
 async function cancelInvite(email){try{await action('cancel_invite',{email});toast('Invitația a fost retrasă')}catch(e){handleError(e)}}
 function exportLists(){const data={app:'MyList',version:2,lists:lists.map(l=>({...l,items:listItems(l.id)}))};const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));a.download='MyList-export.json';a.click();URL.revokeObjectURL(a.href)}
@@ -117,7 +159,7 @@ sb.auth.onAuthStateChange((event,session)=>{if(event==='PASSWORD_RECOVERY'){pass
 function listIcon(l){const name=l.name.toLowerCase();const key=l.store||(/lidl/.test(name)?'lidl':/kaufl/.test(name)?'kaufland':/penny/.test(name)?'penny':/atac|auchan/.test(name)?'atac':/doi pa|2 pa/.test(name)?'doi':/pia/.test(name)?'market':/drume/.test(name)?'hike':'custom');const marks={atac:'ATAC',lidl:'LIDL',kaufland:'K',penny:'PENNY',doi:'La Doi<br>Pași',market:'<svg viewBox="0 0 24 24"><path d="M3 10h18l-2-6H5zM5 10v10h14V10M9 20v-6h6v6M3 10c0 3 3 3 4 0 1 3 4 3 5 0 1 3 4 3 5 0 1 3 4 3 4 0"/></svg>',hike:'<svg viewBox="0 0 24 24"><path d="m2 20 7-15 4 8 3-5 6 12zM7 10l2 2 2-2M13 14l3 2 2-2"/></svg>'};return `<span class="store-mark mark-${key}">${marks[key]||esc(l.name.trim().charAt(0).toLocaleUpperCase('ro'))}</span>`}
 let refreshing=false,pullStart=null,pullDistance=0,pullTracking=false;
 
-const APP_VERSION='2.0.4';
+const APP_VERSION='2.1.0';
 function newerAppVersion(version){if(!/^\d+\.\d+\.\d+$/.test(version||''))return false;const a=version.split('.').map(Number),b=APP_VERSION.split('.').map(Number);for(let i=0;i<3;i++){if(a[i]!==b[i])return a[i]>b[i]}return false}
 function restoreRefreshState(){try{const raw=sessionStorage.getItem('mylist-refresh-state');sessionStorage.removeItem('mylist-refresh-state');if(!raw)return;const state=JSON.parse(raw);if(state.userId!==user.id||Date.now()-state.savedAt>120000)return;if(['lists','history','settings'].includes(state.view))view=state.view;if(typeof state.selected==='string')selected=state.selected;hideDone=!!state.hideDone}catch{}}
 async function updateAppIfAvailable(){
@@ -150,7 +192,7 @@ async function refreshData(){
 document.addEventListener('touchstart',e=>{
  pullStart=null;pullDistance=0;pullTracking=false;
  if(!user||refreshing||busy||modal.open||window.scrollY>1||e.touches.length!==1)return;
- if(e.target.closest('input,select,textarea,button,dialog,.cards,.drag-handle'))return;
+ if(e.target.closest('input,select,textarea,button,dialog,.cards,.drag-handle,.item.done'))return;
  pullStart={x:e.touches[0].clientX,y:e.touches[0].clientY};
 },{passive:true});
 document.addEventListener('touchmove',e=>{
