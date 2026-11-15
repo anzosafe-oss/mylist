@@ -50,3 +50,6 @@ The server function verifies the Auth bearer token, then calls a service-role-on
 Run `tests/families.sql` against a transaction-capable SQL console: all fixtures roll back and no email is sent. The older `tests/account-administration.sql` documents the pre-family v1.2.0 schema and is superseded by the v2.0.0 suite.
 
 GitHub Pages currently also runs its built-in branch-root publisher. Root `index.html` and `admin/` mirror the authoritative `dist/` entrypoints so either publisher serves the same release. Update both until hosting is switched exclusively to Actions.
+
+## Family member management (v2.2.0)
+Apply `supabase/family-member-removal.sql` after the family upgrade. Family administrators can remove regular members from their own household through `mylist_remove_family_member`. The existing global administration functions and frontend remain unchanged. Auth identities and owned lists are preserved. Invitation controls are hidden at four occupied seats and reappear after removal. Pending invitations remain visible and retractable in the household roster, including when full.
