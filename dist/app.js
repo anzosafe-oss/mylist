@@ -3,7 +3,7 @@ const sb=supabase.createClient('https://radskybbymadavveatzn.supabase.co','sb_pu
 const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const cap=s=>s?s.charAt(0).toLocaleUpperCase('ro')+s.slice(1):s;
 let profiles=[],profileDraft=null,profileSaving=false,presencePaint=null;
-let families=[],invitations=[];
+let families=[],invitations=[],reorderGesture=null;
 let user=null,accounts=[],lists=[],members=[],items=[],selected=null,view='lists',scope='all',busy=false,fetching=false,hideDone=false,synced=false,channel=null,poll=null;
 const current=()=>lists.find(l=>l.id===selected),active=()=>lists.filter(l=>!l.completed_at),mine=l=>l.owner_id===user?.id,shared=l=>members.some(m=>m.list_id===l.id),listItems=id=>items.filter(i=>i.list_id===id).sort((a,b)=>a.position-b.position||a.id.localeCompare(b.id)),me=()=>accounts.find(a=>a.user_id===user?.id);
 const modal=$('modal'),form=$('modalForm');
@@ -27,7 +27,7 @@ async function startSession(session){if(!session){passwordMode=false;$('password
 async function logout(){passwordSetupRequired=false;try{sessionStorage.removeItem('mylist-password-setup')}catch{}await sb.auth.signOut({scope:'local'});await startSession(null)}
 function setView(v){view=v;render()}function selectList(id){selected=id;view='lists';render();startPresence()}
 function setScope(v){scope=v;render()}
-function render(){if(passwordMode)return;
+function render(){reorderGesture?.cancel();if(passwordMode)return;
  if(!user)return;document.body.dataset.view=view;document.body.dataset.order='manual';$('main').hidden=false;
  document.querySelectorAll('.bottom-nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===view));
  $('settingsPanel').hidden=view!=='settings';$('cards').style.display=view==='lists'?'flex':'none';document.querySelector('.add').style.display=view==='lists'&&active().length?'flex':'none';document.querySelector('.workspace').style.display=view==='settings'?'none':'';
@@ -134,16 +134,70 @@ function confirmRemoveAccount(uid){
  const button=form.querySelector('.actions .primary');button.textContent='Șterge din MyList';button.classList.add('danger-confirm');button.disabled=true;
 }
 
-function renderSettings(){$('settingsPanel').innerHTML=`<h2>Setări</h2><div class="settings-section"><h3>Cont</h3><p class="account-email">${esc(user.email)} · ${me()?.is_admin?'Administrator MyList':families.some(f=>f.admin_id===user.id)?'Administrator de familie':'Membru'}</p><div class="data-actions"><button class="outline" onclick="showPasswordSetup()">Setează parola</button><button class="outline" onclick="logout()">Deconectare</button></div></div>${profileSettings()}<div class="settings-section"><h3>Afișare</h3><label class="setting-row">Temă<select aria-label="Temă" onchange="setTheme(this.value)">${[['light','Luminos'],['dark','Întunecat'],['system','Sistem']].map(([v,n])=>`<option value="${v}" ${themePreference===v?'selected':''}>${n}</option>`).join('')}</select></label><label class="setting-row"><span>Arată produsele cumpărate</span><input type="checkbox" ${!hideDone?'checked':''} onchange="hideDone=!this.checked"></label></div>${familySettings()}<div class="settings-section"><h3>Date și salvare</h3><p>Listele sunt salvate în contul tău. Cele partajate se actualizează automat, la câteva secunde.</p><div class="data-actions"><button class="outline" onclick="exportLists()">Exportă listele</button><button class="outline" onclick="$('importLists').click()">Importă liste</button></div><input id="importLists" type="file" accept="application/json" hidden onchange="importLists(this)"></div><p class="settings-caption">MyList v2.2.2</p>`}
+function renderSettings(){$('settingsPanel').innerHTML=`<h2>Setări</h2><div class="settings-section"><h3>Cont</h3><p class="account-email">${esc(user.email)} · ${me()?.is_admin?'Administrator MyList':families.some(f=>f.admin_id===user.id)?'Administrator de familie':'Membru'}</p><div class="data-actions"><button class="outline" onclick="showPasswordSetup()">Setează parola</button><button class="outline" onclick="logout()">Deconectare</button></div></div>${profileSettings()}<div class="settings-section"><h3>Afișare</h3><label class="setting-row">Temă<select aria-label="Temă" onchange="setTheme(this.value)">${[['light','Luminos'],['dark','Întunecat'],['system','Sistem']].map(([v,n])=>`<option value="${v}" ${themePreference===v?'selected':''}>${n}</option>`).join('')}</select></label><label class="setting-row"><span>Arată produsele cumpărate</span><input type="checkbox" ${!hideDone?'checked':''} onchange="hideDone=!this.checked"></label></div>${familySettings()}<div class="settings-section"><h3>Date și salvare</h3><p>Listele sunt salvate în contul tău. Cele partajate se actualizează automat, la câteva secunde.</p><div class="data-actions"><button class="outline" onclick="exportLists()">Exportă listele</button><button class="outline" onclick="$('importLists').click()">Importă liste</button></div><input id="importLists" type="file" accept="application/json" hidden onchange="importLists(this)"></div><p class="settings-caption">MyList v2.2.3</p>`}
 async function invite(e){e.preventDefault();const b=e.target.querySelector('button');b.disabled=true;try{const {data,error}=await sb.functions.invoke('mylist-invite',{body:{email:$('inviteEmail').value.trim()}});if(error){let msg='Invitația nu a fost trimisă';try{msg=(await error.context.json()).error||msg}catch{}throw Error(msg)}toast('Invitație trimisă pe e-mail',true);await load(true)}catch(e){handleError(e)}finally{b.disabled=false}}
 async function cancelInvite(email){try{await action('cancel_invite',{email});toast('Invitația a fost retrasă')}catch(e){handleError(e)}}
 function exportLists(){const data={app:'MyList',version:2,lists:lists.map(l=>({...l,items:listItems(l.id)}))};const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));a.download='MyList-export.json';a.click();URL.revokeObjectURL(a.href)}
 async function importData(data){if(!Array.isArray(data)||data.length>100)throw Error('Fișier invalid sau prea multe liste');for(const l of data){if(typeof l.name!=='string'||!Array.isArray(l.items)||l.items.length>500)throw Error('Fișier invalid');const r=await action('create',{name:l.name,store:l.store||'custom'});for(const i of l.items){let name,quantity,unit,important;if(Array.isArray(i)){name=i[0];const q=String(i[3]).match(/^([\d.,]+)\s*(.*)$/);quantity=q?Number(q[1].replace(',','.')):1;unit=q?.[2]||'buc.';important=!!i[6]}else({name,quantity,unit,important}=i);await action('add',{list_id:r.id,name,quantity,unit,important})}}toast('Liste importate ca liste personale, cu produsele debifate')}
 async function importLists(input){try{await importData(JSON.parse(await input.files[0].text()).lists)}catch(e){handleError(e)}}
 
-async function moveItem(id,target){const i=items.find(x=>x.id===id);const rows=listItems(i.list_id).filter(x=>!x.done);const from=rows.findIndex(x=>x.id===id),to=rows.findIndex(x=>x.id===target);if(from<0||to<0||from===to)return;rows.splice(to,0,rows.splice(from,1)[0]);try{await action('reorder',{list_id:i.list_id,ids:rows.map(x=>x.id)})}catch(e){handleError(e)}}
+async function moveItem(id,target){const i=items.find(x=>x.id===id);const rows=listItems(i.list_id).filter(x=>!x.done);const from=rows.findIndex(x=>x.id===id),to=rows.findIndex(x=>x.id===target);if(from<0||to<0||from===to)return;rows.splice(to,0,rows.splice(from,1)[0]);try{await action('reorder',{list_id:i.list_id,ids:rows.map(x=>x.id)})}catch(e){render();handleError(e)}}
 function reorderKey(e,id){if(!['ArrowUp','ArrowDown'].includes(e.key))return;e.preventDefault();const rows=listItems(selected).filter(i=>!i.done),pos=rows.findIndex(i=>i.id===id),next=rows[pos+(e.key==='ArrowUp'?-1:1)];if(next)moveItem(id,next.id)}
-function startReorder(e,id){if(e.button!==0)return;e.preventDefault();const h=e.currentTarget;h.setPointerCapture(e.pointerId);h.closest('.item').classList.add('dragging');let target=id;const move=ev=>{let distance=Infinity;document.querySelectorAll('#items .item:not(.done)').forEach(r=>{const b=r.getBoundingClientRect(),d=Math.abs(ev.clientY-b.top-b.height/2);r.classList.remove('drop-target');if(d<distance){distance=d;target=r.dataset.id}});if(target!==id)document.querySelector(`[data-id="${target}"]`)?.classList.add('drop-target')};const finish=ev=>{h.removeEventListener('pointermove',move);h.removeEventListener('pointerup',finish);h.removeEventListener('pointercancel',finish);document.querySelectorAll('.dragging,.drop-target').forEach(r=>r.classList.remove('dragging','drop-target'));if(ev.type==='pointerup')moveItem(id,target)};h.addEventListener('pointermove',move);h.addEventListener('pointerup',finish);h.addEventListener('pointercancel',finish)}
+function startReorder(e,id){
+ if(e.button!==0||e.isPrimary===false||busy||reorderGesture||!items.some(i=>i.id===id&&!i.done))return;
+ e.preventDefault();
+ const handle=e.currentTarget,row=handle.closest('.item'),pointer=e.pointerId;
+ const initial=row.getBoundingClientRect(),startY=e.clientY,startScroll=window.scrollY;
+ let lastY=startY,target=id,frame=null,ended=false;
+ const block=event=>event.preventDefault();
+ window.getSelection()?.removeAllRanges();
+ document.documentElement.classList.add('is-reordering');row.classList.add('dragging');
+ handle.setAttribute('aria-pressed','true');handle.setPointerCapture(pointer);
+ const clearTargets=()=>document.querySelectorAll('#items .drop-target').forEach(r=>r.classList.remove('drop-target','drop-after'));
+ const paint=()=>{
+  const dy=lastY-startY+window.scrollY-startScroll;
+  row.style.setProperty('--reorder-y',dy+'px');clearTargets();target=id;
+  if(Math.abs(dy)<initial.height/2)return;
+  let distance=Infinity,candidate=null;
+  document.querySelectorAll('#items .item:not(.done):not(.dragging)').forEach(r=>{
+   const b=r.getBoundingClientRect(),d=Math.abs(lastY-b.top-b.height/2);
+   if(d<distance){distance=d;candidate=r;}
+  });
+  if(candidate){
+   target=candidate.dataset.id;candidate.classList.add('drop-target');
+   candidate.classList.toggle('drop-after',dy>0);
+  }
+ };
+ const move=event=>{if(event.pointerId!==pointer)return;if(event.cancelable)event.preventDefault();lastY=event.clientY;paint()};
+ const tick=()=>{
+  if(ended)return;
+  const top=Math.max(0,document.querySelector('header')?.getBoundingClientRect().bottom||0)+40;
+  const bottom=Math.min(window.innerHeight,document.querySelector('.bottom-nav')?.getBoundingClientRect().top||window.innerHeight)-40;
+  const scroll=lastY<top?-7:lastY>bottom?7:0;
+  if(scroll){window.scrollBy(0,scroll);paint();}
+  frame=requestAnimationFrame(tick);
+ };
+ const finish=event=>{
+  if(ended||event&&event.pointerId!==pointer)return;ended=true;cancelAnimationFrame(frame);
+  const commit=event?.type==='pointerup'&&target!==id&&row.isConnected;
+  handle.removeEventListener('pointermove',move);handle.removeEventListener('pointerup',finish);handle.removeEventListener('pointercancel',finish);handle.removeEventListener('lostpointercapture',finish);
+  window.removeEventListener('blur',cancel);document.removeEventListener('visibilitychange',visibility);
+  document.removeEventListener('selectstart',block,true);document.removeEventListener('contextmenu',block,true);document.removeEventListener('dragstart',block,true);
+  if(handle.hasPointerCapture(pointer))handle.releasePointerCapture(pointer);
+  clearTargets();document.documentElement.classList.remove('is-reordering');row.classList.remove('dragging');row.style.removeProperty('--reorder-y');handle.setAttribute('aria-pressed','false');reorderGesture=null;
+  if(commit){
+   const destination=document.querySelector(`#items .item[data-id="${target}"]`);
+   if(destination){const rows=[...document.querySelectorAll('#items .item:not(.done)')];if(rows.indexOf(row)<rows.indexOf(destination))destination.after(row);else destination.before(row);}
+   moveItem(id,target);
+  }
+ };
+ const cancel=()=>finish(),visibility=()=>{if(document.visibilityState==='hidden')cancel()};
+ reorderGesture={cancel};
+ handle.addEventListener('pointermove',move);handle.addEventListener('pointerup',finish);handle.addEventListener('pointercancel',finish);handle.addEventListener('lostpointercapture',finish);
+ window.addEventListener('blur',cancel);document.addEventListener('visibilitychange',visibility);
+ document.addEventListener('selectstart',block,true);document.addEventListener('contextmenu',block,true);document.addEventListener('dragstart',block,true);
+ frame=requestAnimationFrame(tick);
+}
 
 let presenceGeneration=0,presenceSignature='';
 function startPresence(){
@@ -176,7 +230,7 @@ sb.auth.onAuthStateChange((event,session)=>{if(event==='PASSWORD_RECOVERY'){pass
 function listIcon(l){const name=l.name.toLowerCase();const key=l.store||(/lidl/.test(name)?'lidl':/kaufl/.test(name)?'kaufland':/penny/.test(name)?'penny':/atac|auchan/.test(name)?'atac':/doi pa|2 pa/.test(name)?'doi':/pia/.test(name)?'market':/drume/.test(name)?'hike':'custom');const marks={atac:'ATAC',lidl:'LIDL',kaufland:'K',penny:'PENNY',doi:'La Doi<br>Pași',market:'<svg viewBox="0 0 24 24"><path d="M3 10h18l-2-6H5zM5 10v10h14V10M9 20v-6h6v6M3 10c0 3 3 3 4 0 1 3 4 3 5 0 1 3 4 3 5 0 1 3 4 3 4 0"/></svg>',hike:'<svg viewBox="0 0 24 24"><path d="m2 20 7-15 4 8 3-5 6 12zM7 10l2 2 2-2M13 14l3 2 2-2"/></svg>'};return `<span class="store-mark mark-${key}">${marks[key]||esc(l.name.trim().charAt(0).toLocaleUpperCase('ro'))}</span>`}
 let refreshing=false,pullStart=null,pullDistance=0,pullTracking=false;
 
-const APP_VERSION='2.2.2';
+const APP_VERSION='2.2.3';
 function newerAppVersion(version){if(!/^\d+\.\d+\.\d+$/.test(version||''))return false;const a=version.split('.').map(Number),b=APP_VERSION.split('.').map(Number);for(let i=0;i<3;i++){if(a[i]!==b[i])return a[i]>b[i]}return false}
 function restoreRefreshState(){try{const raw=sessionStorage.getItem('mylist-refresh-state');sessionStorage.removeItem('mylist-refresh-state');if(!raw)return;const state=JSON.parse(raw);if(state.userId!==user.id||Date.now()-state.savedAt>120000)return;if(['lists','history','settings'].includes(state.view))view=state.view;if(typeof state.selected==='string')selected=state.selected;hideDone=!!state.hideDone}catch{}}
 async function updateAppIfAvailable(){
