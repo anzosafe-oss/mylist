@@ -16,7 +16,7 @@ self.addEventListener('push',event=>event.waitUntil((async()=>{
  const url=new URL(data.url,self.registration.scope),scope=new URL(self.registration.scope);
  if(url.origin!==scope.origin||url.pathname!==scope.pathname)return;
  const seen=await read('seen',String(data.id));if(seen&&Date.now()-seen<7*86400000)return;
- await self.registration.showNotification(String(data.title||'MyList').slice(0,160),{body:String(data.body||'Lista a fost actualizată.').slice(0,300),icon:new URL(ASSET_BASE+'icons/icon-192.png',scope).href,tag:'mylist-'+data.listId,renotify:false,data:{url:url.href,userId:uid,listId:data.listId}});
+ await self.registration.showNotification(String(data.title||'MyList').slice(0,160),{body:String(data.body||'Lista a fost actualizată.').slice(0,300),icon:new URL(ASSET_BASE+'icons/icon-192.png',scope).href,tag:'mylist-'+data.id,renotify:false,data:{url:url.href,userId:uid,listId:data.listId}});
  await write('seen',String(data.id),Date.now());
  // Bounded retention without retaining list contents or credentials.
  const db=await database();try{await new Promise((resolve,reject)=>{const tx=db.transaction('seen','readwrite'),r=tx.objectStore('seen').openCursor();r.onsuccess=()=>{const c=r.result;if(c){if(c.value<Date.now()-7*86400000)c.delete();c.continue();}};tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});}finally{db.close();}

@@ -15,7 +15,7 @@ insert into public.mylist_items(id,list_id,name,quantity,unit,position) select i
 insert into public.mylist_items(list_id,name,quantity,unit,position) select list,'Ouă',1,'buc.',2048 from push_fixture;
 insert into public.mylist_items(list_id,name,quantity,unit,position) select personal,'Privat',1,'buc.',1024 from push_fixture;
 do $$begin
- assert (select sum(event_count)=2 from public.mylist_push_queue where kind='item_added'),'add grouping';
+ assert (select count(*)=2 and sum(event_count)=2 and bool_and(event_count=1) from public.mylist_push_queue where kind='item_added'),'separate additions';
  assert (select count(*)=1 from public.mylist_push_queue where kind='list_shared'),'share recipient';
  assert not exists(select 1 from public.mylist_push_queue q join public.mylist_push_subscriptions s on s.id=q.subscription_id join push_fixture f on s.user_id=f.a),'own actions suppressed';
  assert not exists(select 1 from public.mylist_push_queue q join push_fixture f on q.list_id=f.personal),'personal excluded';
@@ -71,5 +71,5 @@ do $$begin
 end$$;
 delete from public.mylist_accounts where user_id=(select b from push_fixture);
 do $$begin assert not exists(select 1 from public.mylist_push_subscriptions where user_id=(select b from push_fixture)),'account removal cleans subscriptions';end$$;
-select 'PASS: grouping, defaults, own/personal exclusions, RLS, leases, preferences, logout, revocation and account cleanup' as result;
+select 'PASS: individual events, defaults, own/personal exclusions, RLS, leases, preferences, logout, revocation and account cleanup' as result;
 rollback;

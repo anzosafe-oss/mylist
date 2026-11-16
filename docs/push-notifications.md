@@ -1,10 +1,10 @@
-# MyList v2.3.0 — Web Push
+# MyList v2.3.1 — Web Push
 
-Status: implemented and staged; no frontend or Edge Function publication yet. Database migration is applied but dormant: no config, subscriptions, jobs or scheduler are active.
+Status: v2.3.0 was released; v2.3.1 fixes iOS gesture activation, adds independent event switches and removes notification batching.
 
 ## Implementation
 
-- `dist/push.js`: explicit device opt-in, permission prompt inside the user gesture, per-list account preferences, optional checked/unchecked events, permission/support hints, subscription renewal on sign-in and safe account binding.
+- `dist/push.js`: explicit device opt-in, permission prompt inside the user gesture, per-list account preferences, four independent event switches, permission/support hints, existing-subscription renewal on sign-in; new subscriptions start synchronously from the user click and safe account binding.
 - `dist/sw.js` and root `sw.js`: encrypted Web Push receipt, persistent duplicate suppression, recipient binding, notification click routing and cleanup on logout. No page cache is introduced.
 - `dist/app.js`: narrow settings/session/logout/deep-link hooks. Completed-list links open the matching archive entry and expand products.
 - `dist/index.html`, root `index.html`, `package.json`: script integration, scoped notification styling and v2.3.0. Both GitHub Pages entrypoints remain supported.
@@ -19,8 +19,8 @@ Existing tables only gain notification triggers: `mylist_items`, `mylist_lists`,
 ## Behavior and security
 
 - Shared lists include owned lists with members and lists shared by another person. Personal lists never notify.
-- Added product, newly shared list and completion default on; checked/unchecked default off. Own actions never enqueue a delivery to the actor.
-- Events group by subscription, list, kind and 10-second time window. Scheduler runs every 10 seconds only invokes the Edge Function when jobs are due (typical delivery delay roughly 2–22 seconds, plus provider delay).
+- Added product, newly shared list and completion default on; checked/unchecked default off. All four switches can be changed separately and save a complete preference snapshot to preserve the other choices. Own actions never enqueue a delivery to the actor.
+- Every actual event receives its own event number and per-recipient queue row. The worker uses a distinct notification tag for each delivery. Scheduler runs every 10 seconds and only invokes the Edge Function when jobs are due. OS-level app notification stacking remains controlled by the OS.
 - Atomic 90-second claims prevent concurrent dispatch; stable delivery IDs and worker IndexedDB suppress network retries. At-least-once network transport cannot guarantee global exactly-once delivery.
 - Access, active account, session and current preferences are checked when enqueuing AND immediately before sending. Logout unsubscribes the device and clears local recipient binding; stale account payloads cannot display locally.
 - Notification lifetime is 5 minutes. A notification already delivered before revocation can remain in the OS; revocation blocks later queued sends. Users should avoid sensitive list names/product names if device lock-screen previews are enabled.
@@ -29,6 +29,7 @@ Existing tables only gain notification triggers: `mylist_items`, `mylist_lists`,
 
 ## Release after approval
 
+0. Apply `supabase/push-individual-events.sql` after the base schema to remove batching (already applied on the live project).
 1. Deploy new Edge Function `mylist-push` with all five source/config/lock files; `verify_jwt:false` because the handler validates user JWTs with `auth.getUser` plus the live database session, or authenticates cron with its private token.
 2. Run `supabase/push-release.sql` to activate the scheduler. Until the first legitimate device opt-in, there are no jobs and no dispatch requests.
 3. Publish the saved Sites v2.3.0 version and merge the staged GitHub change to main. Do not run `npm run build` (legacy build overwrites dist); use `npm run check`.
@@ -37,10 +38,11 @@ Existing tables only gain notification triggers: `mylist_items`, `mylist_lists`,
 
 ## Validation completed
 
-- SQL tests: grouping, event defaults, own/personal exclusions, per-list mute, completion transition, exclusive claims, send-time revalidation, preference RLS, denied secret/subscription/worker access, logout, revocation and account cleanup. All fixtures rolled back; no emails or push requests sent.
+- SQL tests: individual events and independent event preferences (`tests/push-individual-events.sql`, rolled back); original base-schema tests cover grouping, event defaults, own/personal exclusions, per-list mute, completion transition, exclusive claims, send-time revalidation, preference RLS, denied secret/subscription/worker access, logout, revocation and account cleanup. All fixtures rolled back; no emails or push requests sent.
 - Deno type checking passed using installed pinned dependencies; real web-push encryption/VAPID request generation passed without any network send.
 - Node tests: endpoint SSRF protection, app URL restriction, four event payloads, missing auth/live-session denial, public-key-only config, subscription ownership, private worker token, provider expiry/retries, worker duplicate/account/logout filtering and deep links (active/archive/revoked/wrong account).
-- Browser fixture: light/dark settings, shared lists from another owner, escaped list names, preference toggles and permission-denied hint. Main login page still loads v2.3.0. Fixture is excluded from release.
+- iOS simulation tests: preloaded worker/public key, synchronous subscribe before any await/API/repaint, synchronous denial releases the control, independent four-switch defaults and writes. Real iPhone activation still needs device validation.
+- Browser fixture: four switches, shared lists from another owner, escaped list names, preference toggles and permission-denied hint. Main login page still loads v2.3.0. Fixture is excluded from release.
 - Supabase security advisor: no new warnings/errors from this feature. Informational RLS-without-policy notices on the three server-only tables are intentional deny-by-default.
 
 ## Real-device validation required after release
