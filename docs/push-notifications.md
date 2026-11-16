@@ -1,6 +1,6 @@
-# MyList v2.3.1 — Web Push
+# MyList v2.3.2 — Web Push
 
-Status: v2.3.0 was released; v2.3.1 fixes iOS gesture activation, adds independent event switches and removes notification batching.
+Status: v2.3.2 fixes the confirmed Apple `400 BadWebPushTopic` rejection and adds notification badges. A failed real Apple delivery was retried after removing the optional Topic header; the dispatch result was sent=1, failed=0. No new shopping-list changes were created for this check.
 
 ## Implementation
 
@@ -50,3 +50,14 @@ Existing tables only gain notification triggers: `mylist_items`, `mylist_lists`,
 On iOS/iPadOS 16.4+, launch MyList from Home Screen, enable Push through Settings, grant permission, close the app and edit a shared list using another account. Android requires a Push-capable browser and granted permission. Test add/grouped add/share/completion, optional toggles, per-list mute, notification click, logout/account switch and access revocation. OS notification settings, Focus/battery/network restrictions can affect delivery; no guaranteed delivery time is promised.
 
 References reviewed: https://webkit.org/blog/13878/web-push-for-web-apps-on-ios-and-ipados/ ; https://developer.mozilla.org/en-US/docs/Web/API/Push_API ; https://supabase.com/docs/guides/functions/schedule-functions .
+
+## v2.3.2 delivery and badge correction
+
+- Optional HTTP Topic header removed from all provider requests. Stable queue IDs and worker deduplication remain; individual notifications still have separate UI tags.
+- Provider error codes are recorded without tokens, endpoints, payloads or private keys. Fifth failed attempt finalizes the job. `supabase/push-delivery-reliability.sql` finalizes stranded attempts and prevents empty cron dispatches; successful delivery history is retained for seven days.
+- Service worker sets the app badge to the number of active notifications when supported, clears it on app reading, click, logout/account switch, and recomputes on notification dismissal. Badge API errors cannot prevent visible notification delivery.
+- Android notification options include a dedicated monochrome small badge image and explicit silent=false. Android Chromium/Brave does not expose App Badging API; launcher/OS/browser settings control the icon dot. The web app cannot force it. Notification settings show this limit on Android.
+- Window visibility handling clears unread notifications/badges when the authenticated app becomes visible. Hidden app does not clear them.
+- Automated coverage includes APNs request without Topic, sanitized provider rejection, terminal fifth attempt, unread badge update/clear, account isolation, hidden/visible read state and Android without Badging API. Deno type check passes. Physical iPhone/Android launcher appearance still requires device validation.
+
+References: https://developer.apple.com/documentation/usernotifications/sending-web-push-notifications-in-web-apps-and-browsers ; https://webkit.org/blog/14112/badging-for-home-screen-web-apps/ ; https://developer.chrome.com/docs/capabilities/web-apis/badging-api .

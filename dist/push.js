@@ -13,8 +13,9 @@ const MyListPush=(()=>{
  function settings(){
   const available=supported()&&(!ios()||standalone());
   const hint=ios()&&!standalone()?'Pe iPhone/iPad, deschide MyList din iconul de pe ecranul principal.':!supported()?'Notificările Push nu sunt disponibile în acest browser.':Notification.permission==='denied'?'Notificările sunt blocate. Permite-le din setările browserului sau ale telefonului.':'Fiecare eveniment activat produce o notificare separată, inclusiv când MyList este închisă.';
+  const badgeHint=/Android/i.test(navigator.userAgent)?'<p>Pe Android, bulina de pe iconiță este controlată de browser și de setările ecranului principal.</p>':'';
   const sharedLists=typeof lists==='undefined'?[]:lists.filter(l=>shared(l));
-  return `<div class="settings-section" id="pushSettings"><h3>Notificări</h3><label class="setting-row"><span>Push pe acest dispozitiv</span><input type="checkbox" aria-label="Push pe acest dispozitiv" ${(pending??enabled)?'checked':''} ${!available||working||preparing||!deviceReady?'disabled':''} onclick="MyListPush.toggle(this.checked)"></label><p>${esc(hint)}</p><p class="push-message" role="status" aria-live="polite">${esc(preparing?'Se pregătesc notificările…':message)}</p>${available&&!deviceReady&&!preparing?'<button type="button" class="outline" onclick="MyListPush.init()">Reîncearcă activarea</button>':''}${ready?events.map(([kind,label])=>`<label class="setting-row"><span>${label}</span><input type="checkbox" aria-label="${label}" ${prefs[kind]?'checked':''} ${working?'disabled':''} onchange="MyListPush.preference('${kind}',this.checked)"></label>`).join('')+(sharedLists.length?'<p>Liste partajate</p>'+sharedLists.map(l=>`<label class="setting-row"><span class="push-list-name">${esc(l.name)}</span><input type="checkbox" aria-label="Notificări pentru ${esc(l.name)}" ${listPrefs[l.id]!==false?'checked':''} ${working?'disabled':''} onchange="MyListPush.listPreference('${l.id}',this.checked)"></label>`).join(''):'<p>Listele partajate vor apărea aici.</p>'):''}</div>`;
+  return `<div class="settings-section" id="pushSettings"><h3>Notificări</h3><label class="setting-row"><span>Push pe acest dispozitiv</span><input type="checkbox" aria-label="Push pe acest dispozitiv" ${(pending??enabled)?'checked':''} ${!available||working||preparing||!deviceReady?'disabled':''} onclick="MyListPush.toggle(this.checked)"></label><p>${esc(hint)}</p>${badgeHint}<p class="push-message" role="status" aria-live="polite">${esc(preparing?'Se pregătesc notificările…':message)}</p>${available&&!deviceReady&&!preparing?'<button type="button" class="outline" onclick="MyListPush.init()">Reîncearcă activarea</button>':''}${ready?events.map(([kind,label])=>`<label class="setting-row"><span>${label}</span><input type="checkbox" aria-label="${label}" ${prefs[kind]?'checked':''} ${working?'disabled':''} onchange="MyListPush.preference('${kind}',this.checked)"></label>`).join('')+(sharedLists.length?'<p>Liste partajate</p>'+sharedLists.map(l=>`<label class="setting-row"><span class="push-list-name">${esc(l.name)}</span><input type="checkbox" aria-label="Notificări pentru ${esc(l.name)}" ${listPrefs[l.id]!==false?'checked':''} ${working?'disabled':''} onchange="MyListPush.listPreference('${l.id}',this.checked)"></label>`).join(''):'<p>Listele partajate vor apărea aici.</p>'):''}</div>`;
  }
  async function api(body){let timer;try{
   const r=await Promise.race([sb.functions.invoke('mylist-push',{body}),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Conexiunea a durat prea mult. Încearcă din nou.')),15000);})]);
@@ -47,7 +48,7 @@ const MyListPush=(()=>{
    if(stored&&btoa(String.fromCharCode(...new Uint8Array(stored))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')!==publicKey){await sub.unsubscribe();sub=null;}
    if(opted(uid)&&Notification.permission==='granted'&&sub){
     await api({action:'subscribe',subscription:sub.toJSON(),appUrl:base()});if(g!==generation)return;
-    await bind(uid,g);if(g!==generation)return;enabled=true;
+    await bind(uid,g);if(g!==generation)return;enabled=true;await markRead();
    }else{
     await bind(null,g);if(sub)await sub.unsubscribe();
     if(opted(uid))message='Apasă pentru a reactiva Push pe acest dispozitiv.';
@@ -71,7 +72,7 @@ const MyListPush=(()=>{
     paint();const sub=await subscribing;if(g!==generation||user?.id!==uid)return;
     await api({action:'subscribe',subscription:sub.toJSON(),appUrl:base()});if(g!==generation)return;
     await bind(uid,g);if(g!==generation)return;
-    localStorage.setItem('mylist-push:'+uid,'on');enabled=true;message='Notificări activate.';
+    localStorage.setItem('mylist-push:'+uid,'on');enabled=true;await markRead();message='Notificări activate.';
    }else{paint();localStorage.removeItem('mylist-push:'+uid);await disable();message='Notificări oprite pe acest dispozitiv.';}
   }catch(e){if(g!==generation)return;if(on){localStorage.removeItem('mylist-push:'+uid);try{await disable();}catch{}}message=failure(e);}
   finally{if(g===generation){working=false;pending=null;paint();}}
@@ -83,10 +84,12 @@ const MyListPush=(()=>{
   const l=lists.find(l=>l.id===id);if(!l){toast('Lista nu mai este disponibilă pentru acest cont.');return;}
   selected=l.id;view=l.completed_at?'history':'lists';archiveTarget=l.completed_at?l.id:null;
  }
+ async function markRead(){if(!user||document.visibilityState==='hidden')return;try{const reg=await worker();if(user&&enabled)reg?.active?.postMessage({type:'MYLIST_PUSH_READ',userId:user.id});if(navigator.clearAppBadge)await navigator.clearAppBadge();}catch{}}
  async function clear(){generation++;owner=null;enabled=false;ready=false;prefs={...defaults};listPrefs={};working=false;pending=null;preparing=false;deviceReady=false;publicKey=null;if(supported()){try{await bind(null);}catch{}}}
  async function logout(){generation++;if(owner)localStorage.removeItem('mylist-push:'+owner);if(supported()){try{await disable();}catch{try{await bind(null);}catch{}}}await clear();}
+ document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&user&&enabled)markRead();});
  window.addEventListener('online',()=>{if(user&&!working)init();});
  window.addEventListener('load',()=>{if(supported())worker().then(r=>r?.update()).catch(()=>{});});
  navigator.serviceWorker?.addEventListener('message',e=>{if(e.data?.type==='MYLIST_OPEN_LIST'&&user){const u=new URL(e.data.url,location.href);if(u.origin!==location.origin)return;history.replaceState(null,'',u);openPendingList();render();}});
- return {settings,init,refresh,clear,logout,openPendingList,revealArchive,archiveId:()=>archiveTarget,toggle,preference:(kind,v)=>{if(events.some(e=>e[0]===kind))return save('mylist_push_preferences',{...Object.fromEntries(events.map(([key])=>[key,!!prefs[key]])),[kind]:v})},listPreference:(id,v)=>save('mylist_push_list_preferences',{list_id:id,enabled:v})};
+ return {settings,init,refresh,clear,logout,openPendingList,markRead,revealArchive,archiveId:()=>archiveTarget,toggle,preference:(kind,v)=>{if(events.some(e=>e[0]===kind))return save('mylist_push_preferences',{...Object.fromEntries(events.map(([key])=>[key,!!prefs[key]])),[kind]:v})},listPreference:(id,v)=>save('mylist_push_list_preferences',{list_id:id,enabled:v})};
 })();

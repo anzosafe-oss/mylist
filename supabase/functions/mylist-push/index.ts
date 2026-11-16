@@ -22,14 +22,16 @@ async function dispatch(keys:any){
   }
   const url=new URL(target.app_url);url.searchParams.set('list',job.list_id);url.searchParams.set('push_user',target.user_id);
   const payload={id:String(job.id),userId:target.user_id,listId:job.list_id,title:'MyList · '+target.list_name,body:notificationBody(job),url:url.href};
-  const request=webpush.generateRequestDetails(target.subscription,JSON.stringify(payload),{TTL:300,urgency:'normal',topic:'ml-'+job.id,vapidDetails:{subject:'mailto:apps.anzo@gmail.com',publicKey:keys.publicKey,privateKey:keys.privateKey}});
+  const request=webpush.generateRequestDetails(target.subscription,JSON.stringify(payload),{TTL:300,urgency:'normal',vapidDetails:{subject:'mailto:apps.anzo@gmail.com',publicKey:keys.publicKey,privateKey:keys.privateKey}});
   const response=await fetch(request.endpoint,{method:request.method,headers:request.headers,body:request.body,redirect:'error',signal:AbortSignal.timeout(12000)});
   if([404,410].includes(response.status)){checked(await db.from('mylist_push_subscriptions').delete().eq('id',target.subscription_id));discarded++;continue;}
-  if(!response.ok)throw Error('provider_'+response.status);
+  if(!response.ok){let reason='';try{const value=(await response.json()).reason;if(typeof value==='string'&&/^[A-Za-z][A-Za-z0-9_]{0,60}$/.test(value))reason='_'+value;}catch{}throw Error('provider_'+response.status+reason);}
   checked(await db.from('mylist_push_queue').update({finished_at:new Date().toISOString(),outcome:'sent'}).eq('id',job.id).eq('claim_token',job.claim_token));sent++;
- }catch{
-  // No endpoints, keys, list contents or account identifiers in logs.
-  failed++;checked(await db.from('mylist_push_queue').update({locked_until:null,due_at:new Date(Date.now()+Math.min(300000,10000*2**job.attempts)).toISOString(),outcome:'retry'}).eq('id',job.id).eq('claim_token',job.claim_token).is('finished_at',null));
+ }catch(error){
+  // Store only a whitelisted provider code; never endpoint tokens, keys or payloads.
+  const code=error instanceof Error&&/^provider_[0-9]{3}(?:_[A-Za-z0-9_]{1,61})?$/.test(error.message)?error.message:'transport_or_runtime';
+  const terminal=job.attempts>=5;
+  failed++;checked(await db.from('mylist_push_queue').update({locked_until:null,finished_at:terminal?new Date().toISOString():null,due_at:new Date(Date.now()+Math.min(300000,10000*2**job.attempts)).toISOString(),outcome:(terminal?'failed:':'retry:')+code}).eq('id',job.id).eq('claim_token',job.claim_token).is('finished_at',null));
  }}
  }));return {sent,failed,discarded};
 }

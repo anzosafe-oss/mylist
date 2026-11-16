@@ -6,10 +6,10 @@ const jwt='x.'+Buffer.from(JSON.stringify({session_id:sid})).toString('base64url
 function setup(options={}){
  const calls=[],config={enabled:true,keys:{publicKey:'public',privateKey:'private',dispatchToken:'worker'}};
  const db={auth:{getUser:async token=>({data:{user:token===jwt?{id:uid}:null},error:token===jwt?null:Error('invalid')})},rpc:async(name,args)=>{
-  calls.push({rpc:name,args});return {data:name==='mylist_push_session'?options.session!==false:name==='mylist_push_claim'?[{id:7,list_id:'44444444-4444-4444-8444-444444444444',kind:'item_added',event_count:2,last_name:'Lapte',claim_token:'lease',attempts:1}]:options.noAccess?null:{subscription_id:'sub',user_id:uid,subscription:sub,app_url:'https://anzosafe-oss.github.io/mylist/',list_name:'Familie'}};
+  calls.push({rpc:name,args});return {data:name==='mylist_push_session'?options.session!==false:name==='mylist_push_claim'?[{id:7,list_id:'44444444-4444-4444-8444-444444444444',kind:'item_added',event_count:2,last_name:'Lapte',claim_token:'lease',attempts:options.attempts||1}]:options.noAccess?null:{subscription_id:'sub',user_id:uid,subscription:sub,app_url:'https://anzosafe-oss.github.io/mylist/',list_name:'Familie'}};
  },from(table){const q={op:'select',select(){return q},eq(){return q},is(){return q},upsert(value){q.op='upsert';q.value=value;return q},delete(){q.op='delete';return q},update(value){q.op='update';q.value=value;return q},maybeSingle(){q.one=true;return Promise.resolve(result())},single(){return Promise.resolve(result())},then(resolve){resolve(result())}};function result(){calls.push({table,op:q.op,value:q.value});return {data:table==='mylist_push_config'?config:table==='mylist_push_subscriptions'&&q.op==='select'?q.one?(options.prior||null):[]:[]}}return q}};
  let handler,fetches=0;
- const context={Request,Response,URL,atob,AbortSignal,crypto,console,validSubscription,validAppUrl,notificationBody,createClient:()=>db,webpush:{generateRequestDetails:()=>({endpoint:sub.endpoint,method:'POST',headers:{},body:'encrypted'})},fetch:async()=>{fetches++;return new Response('',{status:options.status||201})},Deno:{env:{get:()=> 'server-only'},serve:fn=>handler=fn}};
+ const context={Request,Response,URL,atob,AbortSignal,crypto,console,validSubscription,validAppUrl,notificationBody,createClient:()=>db,webpush:{generateRequestDetails:(subscription,payload,options)=>{calls.push({requestOptions:options});return {endpoint:sub.endpoint,method:'POST',headers:{},body:'encrypted'}}},fetch:async()=>{fetches++;return new Response(options.reason?JSON.stringify({reason:options.reason}):'',{status:options.status||201})},Deno:{env:{get:()=> 'server-only'},serve:fn=>handler=fn}};
  const source=readFileSync(new URL('../supabase/functions/mylist-push/index.ts',import.meta.url),'utf8').replace(/^import .*;\n/gm,'');
  vm.runInNewContext(stripTypeScriptTypes(source),context);
  return {calls,get fetches(){return fetches},request:async(body,headers={Authorization:'Bearer '+jwt})=>handler(new Request('https://edge.example/mylist-push',{method:'POST',headers:{'Content-Type':'application/json',...headers},body:JSON.stringify(body)}))};
@@ -33,5 +33,9 @@ test('worker token, revoked access and expired provider subscriptions',async()=>
 });
 test('success finalizes claim; transient failure schedules bounded retry',async()=>{
  let s=setup();assert.equal((await (await s.request({},{'x-mylist-dispatch':'worker'})).json()).sent,1);assert.ok(s.calls.some(c=>c.value?.outcome==='sent'));
- s=setup({status:503});assert.equal((await (await s.request({},{'x-mylist-dispatch':'worker'})).json()).failed,1);assert.ok(s.calls.some(c=>c.value?.outcome==='retry'));
+ s=setup({status:503});assert.equal((await (await s.request({},{'x-mylist-dispatch':'worker'})).json()).failed,1);assert.ok(s.calls.some(c=>c.value?.outcome?.startsWith('retry:')));
 });
+
+test('Apple rejection reason retained without secrets; final retry terminates',async()=>{const s=setup({status:403,reason:'BadJwtToken',attempts:5});await s.request({},{'x-mylist-dispatch':'worker'});assert.ok(s.calls.some(c=>c.value?.outcome==='failed:provider_403_BadJwtToken'&&c.value.finished_at));});
+
+test('APNs delivery omits the rejected optional Topic header',async()=>{const s=setup();await s.request({},{'x-mylist-dispatch':'worker'});const options=s.calls.find(c=>c.requestOptions).requestOptions;assert.equal(Object.hasOwn(options,'topic'),false);assert.equal(options.TTL,300);});
