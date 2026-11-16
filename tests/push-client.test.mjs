@@ -1,0 +1,9 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import vm from 'node:vm';import {readFileSync} from 'node:fs';
+function setup(url){const messages=[],ctx={URL,location:new URL(url),isSecureContext:false,localStorage:{getItem(){return null}},navigator:{userAgent:'Desktop'},matchMedia:()=>({matches:false}),document:{getElementById:()=>null},window:{addEventListener(){}},history:{replaceState(a,b,u){ctx.location=new URL(u)}},user:{id:'alice'},lists:[{id:'active',name:'Shared <list>'},{id:'archive',completed_at:'today'}],shared:l=>l.id==='active',esc:s=>String(s).replace(/</g,'&lt;').replace(/>/g,'&gt;'),toast:t=>messages.push(t),selected:null,view:'settings'};vm.runInNewContext(readFileSync(new URL('../dist/push.js',import.meta.url),'utf8')+'\nthis.push=MyListPush;',ctx);return {ctx,messages,push:ctx.push};}
+test('deep link selects accessible list and consumes query',()=>{const s=setup('https://app.example/?list=active&push_user=alice');s.push.openPendingList();assert.equal(s.ctx.selected,'active');assert.equal(s.ctx.view,'lists');assert.equal(s.ctx.location.search,'');});
+test('completed list opens history; wrong account and revoked list are rejected once',()=>{
+ let s=setup('https://app.example/?list=archive&push_user=alice');s.push.openPendingList();assert.equal(s.ctx.view,'history');assert.equal(s.push.archiveId(),'archive');
+ s=setup('https://app.example/?list=active&push_user=bob');s.push.openPendingList();s.push.openPendingList();assert.equal(s.ctx.selected,null);assert.equal(s.messages.length,1);
+ s=setup('https://app.example/?list=revoked&push_user=alice');s.push.openPendingList();assert.equal(s.ctx.selected,null);assert.match(s.messages[0],/disponibilă/);
+});
+test('unsupported browser remains usable and never requests permission',()=>{const s=setup('https://app.example/');assert.match(s.push.settings(),/nu sunt disponibile/);assert.match(s.push.settings(),/disabled/);});
