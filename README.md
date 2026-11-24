@@ -53,3 +53,7 @@ GitHub Pages currently also runs its built-in branch-root publisher. Root `index
 
 ## Family member management (v2.2.0)
 Apply `supabase/family-member-removal.sql` after the family upgrade. Family administrators can remove regular members from their own household through `mylist_remove_family_member`. The existing global administration functions and frontend remain unchanged. Auth identities and owned lists are preserved. Invitation controls are hidden at four occupied seats and reappear after removal. Pending invitations remain visible and retractable in the household roster, including when full.
+
+## Draft pentru revizuire — alias la activare (2.3.3)
+
+Primul profil fără alias completează aliasul înainte de a intra în liste. Linkurile de activare/configurare afișează aliasul și parola împreună; resetarea păstrează aliasul existent. Setările modifică aliasul salvat și păstrează separat schimbarea parolei. Nu se schimbă autentificarea cu email/parolă, SMTP sau tabelele. Verificări: `node --test tests/onboarding.test.cjs` și testul SQL cu rollback. Schimbările rămân pe ramura de revizuire până la aprobarea preview-ului emailurilor.
