@@ -2,20 +2,24 @@ name: Deploy MyList
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - AGENTS.md
+      - README.md
+      - docs/push-notifications.md
+      - docs/push-settings-dark.jpg
+      - docs/push-settings-v231.jpg
   workflow_dispatch:
 permissions:
   contents: read
-  pages: write
-  id-token: write
 concurrency:
   group: pages
   cancel-in-progress: false
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  prepare:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read
     steps:
       - uses: actions/checkout@v4
       - name: Verify password login before publishing
@@ -23,11 +27,30 @@ jobs:
         run: |
           grep -q 'id="loginPassword"' dist/index.html
           grep -q 'signInWithPassword' dist/app.js
-          printf '%s\\n' "$GITHUB_SHA" > dist/release.txt
+      - name: Prepare the current public layout
+        shell: bash
+        run: |
+          mkdir _site
+          cp -R .nojekyll index.html manifest.webmanifest sw.js admin dist _site/
+          printf '%s\n' "$GITHUB_SHA" > _site/release.txt
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          name: github-pages
+          path: _site
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - name: Deploy
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
+        with:
+          artifact_name: github-pages
